@@ -9,11 +9,6 @@ input_part <- "data/raw/Apis_mellifera_406088.part.csv"
 output_fasta <- "data/apis_vg.cds.fasta"
 output_part <- "data/apis_vg.cds.part.txt"
 
-#### HELPERS ###################################################################
-
-`%notin%` <- Negate(`%in%`)
-dropna <- function(x) x[!is.na(x)]
-
 #### MAIN ######################################################################
 
 # read inputs
