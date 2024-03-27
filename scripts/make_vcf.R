@@ -10,9 +10,9 @@ library(tidyverse)
 library(ape)
 
 # Hard code inputs and outputs
-input_fasta <- "data/apis_vg.cds.fasta"
-input_part <- "data/apis_vg.cds.part.txt"
-output_vcf <- "data/apis_mellifera_vg.cds.vcf"
+input_fasta <- "results/apis_vg.dna.fasta"
+input_part <- "results/apis_vg.dna.part.txt"
+output_vcf <- "results/apis_mellifera_vg.dna.vcf"
 
 #### HELPERS ###################################################################
 
@@ -101,21 +101,76 @@ names(variants) <- as.character(pos)
 # identify variants at each site
 sites <- map(variants, alleles_to_indexes, outgroups)
 
-#### CONSTRUCT VCF VARIANTS ####################################################
+#### CONSTRUCT VCF DATA ########################################################
 
-fix <- sites |> map(function(x) {
+tab <- sites |> map(function(x) {
+    alt <- if(length(x$refalt) < 2) NA_character_ else 
+        str_flatten(x$refalt[-1], ",")
+
+    bees <- seq(1, length(x$alleles), 2)
+
+    k <- tabulate(x$alleles)
+    f <- sort(k, decreasing = TRUE)/sum(k)
+    maf <- coalesce(f[2], 0)
+
     y <- list(
-        Ref = x$refalt[1],
-        Alt = str_flatten_comma(x$refalt[-1]),
-        N = str_flatten_comma(tabulate(x$alleles)),
+        ref = x$refalt[1],
+        alt = alt,
         AA = x$aa,
         Cerana = x$cerana,
         Dorsata = x$dorsata,
         Laboriosa = x$laboriosa,
-        Florea = x$florea
+        Florea = x$florea,
+        AN = sum(!is.na(x$alleles)),
+        NS = sum(!is.na(x$alleles[bees]) & !is.na(x$alleles[bees+1])),
+        MAF = maf,
+        AC = str_flatten(k[-1], ",")
     )
     as_tibble_row(y)
 }) |> list_rbind()
+
+info <- tab |> select(AA:MAF) |> replace_na(list(AA = ".",
+    Cerana = ".", Dorsata = ".", Laboriosa = ".", Florea = ".")) |>
+    mutate(MAF = round(MAF, 4))
+
+str <- str_c(names(info), "={", names(info), "}", collapse=";")
+
+info <- str_glue_data(info, str)
+
+ac <- if_else(tab$AC == "", "", str_c(";AC=", tab$AC))
+
+pos <- as.integer(names(sites))
+pos_part <- if_else(part[pos] %% 2 == 1,
+    paste0("Exon=", (part[pos]+1) %/% 2),
+    paste0("Intron=",(part[pos]+1) %/% 2) )
+
+info <- str_glue("{pos_part};{info}{ac}")
+
+fix <- tab |> transmute(`#CHROM` = "Vg",
+    POS = pos,
+    ID = NA_character_,
+    REF = ref,
+    ALT = alt,
+    QUAL = NA_character_,
+    FILTER = "PASS",
+    INFO = info,
+    FORMAT = "GT")
+
+# gt data
+gt <- sites |> map(pluck, "alleles") |>
+    list_c() |> (`+`)(-1) |> as.character() |>
+    coalesce(".") |>
+    matrix(ncol = 2, byrow = TRUE)
+
+# merge haplotypes into diplotypes
+gt <- str_glue("{gt[,1]}|{gt[,2]}") |>
+    matrix(nrow = length(sites), byrow = TRUE)
+
+bees <- seq(1,nrow(mel),2)
+
+colnames(gt) <- rownames(mel)[bees] |> str_replace("_HP1","")
+
+df <- bind_cols(fix, gt)
 
 #### WRITE OUTPUT ##############################################################
 
@@ -130,8 +185,6 @@ header <- '##fileformat=VCFv4.2
 ##INFO=<ID=Florea,Number=1,Type=String,Description="Apis florea Allele">
 ##INFO=<ID=Exon,Number=1,Type=Integer,Description="Which exon the variant is in">
 ##INFO=<ID=Intron,Number=1,Type=Integer,Description="Which intron the variant is in">
-##INFO=<ID=AA,Number=1,Type=String,Description="Ancestral Allele">
-##INFO=<ID=AA,Number=1,Type=String,Description="Ancestral Allele">
 ##INFO=<ID=AA,Number=1,Type=String,Description="Ancestral Allele">
 ##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
 ##INFO=<ID=AN,Number=1,Type=Integer,Description="Total number of alleles in called genotypes">
@@ -148,6 +201,5 @@ header <- '##fileformat=VCFv4.2
 ##FORMAT=<ID=VAF1,Number=1,Type=Float,Description="The fraction of reads with alternate alleles (nSumALT/nSumAll)">
 '
 
-outfile <- "combined_msa_trunc.vcf"
-write_file(header, outfile)
-write_tsv(tab, outfile, na = ".", append=TRUE, col_names=TRUE)
+write_file(header, output_vcf)
+write_tsv(df, output_vcf, na = ".", append=TRUE, col_names=TRUE)

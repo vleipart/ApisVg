@@ -1,6 +1,6 @@
 default: all
 
-all:
+all: results/apis_vg.dna.fasta results/apis_mellifera_vg.dna.vcf
 
 .PHONY: default all
 
@@ -14,6 +14,8 @@ data/apis_vg.msa.fasta: data/apis_vg.fasta
 
 # Truncate the msa to start and stop columns of A. mellifera reference.
 # Assumes that first sequence is reference
-data/apis_vg.cds.fasta data/apis_vg.cds.part.txt: data/apis_vg.msa.fasta data/raw/Apis_mellifera_406088.part.csv
-	bash scripts/run.bash Rscript scripts/make_cds.R
+results/apis_vg.dna.fasta results/apis_vg.dna.part.txt: data/apis_vg.msa.fasta data/raw/Apis_mellifera_406088.part.csv
+	bash scripts/run.bash Rscript scripts/make_dna.R
 
+results/apis_mellifera_vg.dna.vcf: results/apis_vg.dna.fasta results/apis_vg.dna.part.txt
+	bash scripts/run.bash Rscript scripts/make_vcf.R
