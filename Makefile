@@ -19,3 +19,6 @@ results/apis_vg.dna.fasta results/apis_vg.dna.part.txt: data/apis_vg.msa.fasta d
 
 results/apis_mellifera_vg.dna.vcf: results/apis_vg.dna.fasta results/apis_vg.dna.part.txt
 	bash scripts/run.bash Rscript scripts/make_vcf.R
+
+report.pdf: report.qmd
+	bash scripts/run.bash quarto render $< --to pdf

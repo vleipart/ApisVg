@@ -16,12 +16,19 @@ do_rscript() {
     exec Rscript --vanilla "$@"
 }
 
+do_quarto() {
+    exec /usr/lib/rstudio/resources/app/bin/quarto/bin/quarto "$@"
+}
+
 case $cmd in
   mafft)
     do_mafft "$@"
     ;;
   Rscript)
     do_rscript "$@"
+    ;;
+  quarto)
+    do_quarto "$@"
     ;;
   *)
     echo This script does not know how to "$cmd".

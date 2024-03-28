@@ -1,0 +1,191 @@
+---
+title: "Vg Analysis"
+author: "Reed A. Cartwright"
+format: pdf
+editor: source
+pdf-engine: lualatex
+mainfont: TeX Gyre Pagella
+monofont: Source Code Pro
+geometry:
+  - margin=0.5in
+---
+
+```{r}
+#| include=FALSE
+
+library(stringdist)
+library(tidyverse)
+library(vcfR)
+library(here)
+```
+
+## Vizualizing Haplotypes
+
+We have created a VCF of the Vg region based on 543 diploid samples, and for
+this analysis we will investigate the biallelic sites with known ancestral
+allele.
+
+```{r}
+raw_vcf <- read.vcfR(here("results", "apis_mellifera_vg.dna.vcf"),
+                     verbose = FALSE)
+raw_vcf_fix <- vcfR2tidy(raw_vcf, info_only = TRUE)$fix
+
+vcf <- raw_vcf[is.polymorphic(raw_vcf) &
+               is.biallelic(raw_vcf) & 
+               raw_vcf_fix$AA != "."]
+vcf_fix <- vcfR2tidy(vcf, info_only = TRUE)$fix
+```
+
+Next we will extract phased haplotytpes and encode variants as 0 = ancestral
+and 1 = derived.
+
+```{r}
+haplotypes <- (extract.haps(vcf, verbose = FALSE) != vcf_fix$AA)*1L
+num_sites <- nrow(haplotypes)
+haplotypes_str <- apply(haplotypes, 2, str_flatten)
+```
+
+Next we will count how abundant each haplotype is in our dataset and plot the
+haplotypes in two dimensions using principle-coordinate analysis (PCoA).
+
+```{r}
+tab <- tibble(hap = haplotypes_str) |> count(hap)
+
+hap_dist <- stringdistmatrix(tab$hap, method = "hamming")
+v <- cmdscale(hap_dist/nrow(haplotypes), 2)
+
+tab <- tab |> mutate(x = v[,1], y = v[,2])
+gg <- ggplot(tab, aes(x = x, y = y, size = n)) + geom_point(alpha = 0.5)
+gg <- gg + xlab("Axis 1") + ylab("Axis 2")
+gg <- gg + scale_size_continuous("Count")
+gg <- gg + coord_fixed()
+gg
+```
+
+The spread along Axis 1 reflects the presence of two haplogroups that are
+present in our dataset at high frequency. When we look at a historgram of
+MAF values, we see a many sites with a MAF \> 0.25.
+
+```{r}
+gg <- ggplot(vcf_fix, aes(x = MAF)) + geom_histogram(bins = 20)
+gg
+```
+
+## Vizualizing Haplogroups
+
+To look at the haplogroups, we will focus only on sites with a MAF \> 0.25.
+Looking only at these sites, we determine that the two most common haplotypes,
+do not share any derived alleles. This suggests that each haplogroup evolved
+independent and in an isolated population. We will use these two haplotypes as
+reference haplotypes for each haplogroup.
+
+```{r}
+# select sites with high MAF
+hg_o <- vcf_fix$MAF >= 0.25
+
+# select sites in which AA matches the outgroups
+# hg_o <- hg_o & vcf_fix$AA == vcf_fix$Cerana & 
+#   vcf_fix$AA == vcf_fix$Laboriosa &
+#   vcf_fix$AA == vcf_fix$Dorsata
+
+haplotypes_hg <- (extract.haps(vcf[hg_o], verbose = FALSE) !=
+                    vcf_fix[hg_o, ]$AA)*1L
+haplotypes_hg_str <- apply(haplotypes_hg, 2, str_flatten)
+
+tab_hg <- tibble(hap = haplotypes_hg_str) |> count(pick(everything()))
+
+tab_hg |> slice_max(n, n = 5)
+```
+
+If we plot the haplogroup-defining sites in two dimensions we see that the two
+references separate on different ends of Axis 1.
+
+```{r}
+hap_dist_hg <- stringdistmatrix(tab_hg$hap, method = "hamming")
+v <- cmdscale(hap_dist_hg/nrow(haplotypes_hg), 2)
+
+tab_hg <- tab_hg |> mutate(x = v[,1], y = v[,2])
+gg <- ggplot(tab_hg, aes(x = x, y = y, size = n)) + geom_point(alpha = 0.5)
+gg <- gg + xlab("Axis 1") + ylab("Axis 2")
+gg <- gg + scale_size_continuous("Count")
+gg <- gg + coord_fixed()
+gg
+```
+
+Now we will redraw the original plot, but colored according to haplogroup.
+
+```{r}
+hg_ref <- tab_hg |> slice_max(n, n = 1) |> pull(hap)
+
+tab$hg <- tab$hap |> str_sub_all(which(hg_o), which(hg_o)) |>
+    map_chr(str_flatten)
+tab$hg_dist <- stringdistmatrix(tab$hg, hg_ref, "hamming")[,1]/sum(hg_o)
+
+gg <- ggplot(tab, aes(x = x, y = y, size = n, color = hg_dist)) +
+  geom_point()
+gg <- gg + xlab("Axis 1") + ylab("Axis 2")
+gg <- gg + scale_size_continuous("Count")
+gg <- gg + scale_color_distiller("Haplogroup", palette = "RdYlBu")
+gg <- gg + coord_fixed()
+gg
+```
+
+## Recombinant Sequences
+
+We can identify recombinant sequences by looking at sequences that have parts
+of both haplogroups
+
+```{r}
+#| fig.height=5
+hg_v <- str_split(tab$hg, "")
+hg_ref <- str_split_1(hg_ref, "")
+hg_str <- map(hg_v, \(x) case_when(
+    x == 0 ~ 0,
+    x == hg_ref ~ 1,
+    TRUE ~ 2
+    ))
+tab$hg_str <- hg_str |> map_chr(str_flatten)
+tab$is_recomb <- str_detect(tab$hg_str, "10*1") &
+  str_detect(tab$hg_str, "20*2")
+
+gg <- ggplot(tab, aes(x = x, y = y, size = n, color = hg_dist,
+                      shape = is_recomb)) + geom_point()
+gg <- gg + xlab("Axis 1") + ylab("Axis 2")
+gg <- gg + scale_size_continuous("Count")
+gg <- gg + scale_shape_discrete("Recombinant")
+gg <- gg + scale_color_distiller("Background", palette = "RdYlBu")
+gg <- gg + coord_fixed()
+gg
+```
+
+Same analysis as before but now we will split it based on broad geographic regions
+
+```{r}
+#| fig.height=8
+tab <- tibble(sample = colnames(haplotypes), hap = haplotypes_str)
+
+tab <- tab |> separate_wider_regex(sample, c("[^_]+_",
+    "apiary" = "..", ".*"), cols_remove = FALSE) |>
+    separate_wider_delim(sample, "_", names = c("id", "id", NA), cols_remove = FALSE)
+tab <- tab |> mutate(region = case_match(apiary,
+    c("NC", "CA", "MD", "AZ", "MN", "IL") ~ "USA",
+    c("FN", "SW", "RN", "CS", "DK", "IR", "PO", "TX", "FR") ~ "Brownbee",
+    c("SL", "IT", "PL", "MK", "MT", "TR") ~ "South Europe"
+    ))
+tab <- tab |> count(hap, region)
+
+hap_dist <- stringdistmatrix(tab$hap, method = "hamming")
+v <- cmdscale(hap_dist/num_sites, 2)
+tab <- tab |> mutate(x = v[,1], y = v[,2])
+tab <- tab |> arrange(desc(n))
+
+gg <- ggplot(tab, aes(x = x, y = y, size = n, color = region)) +
+  geom_point(alpha = 0.5)
+gg <- gg + xlab("Axis 1") + ylab("Axis 2")
+gg <- gg + scale_size_continuous("Count")
+gg <- gg + scale_color_brewer("Region", palette = "Set1")
+gg <- gg + coord_fixed()
+gg <- gg + facet_wrap(vars(region), ncol = 1)
+gg
+
+```
