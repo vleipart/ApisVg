@@ -82,18 +82,33 @@ reference haplotypes for each haplogroup.
 ```{r}
 # select sites with high MAF
 hg_o <- vcf_fix$MAF >= 0.25
+hg_pos <- which(hg_o)
 
-# select sites in which AA matches the outgroups
-# hg_o <- hg_o & vcf_fix$AA == vcf_fix$Cerana & 
-#   vcf_fix$AA == vcf_fix$Laboriosa &
-#   vcf_fix$AA == vcf_fix$Dorsata
+# Customize AA based on recombination data
+#vcf_fix$AA[hg_pos[47]] <- "C"
 
+# create haplogroup sequences
 haplotypes_hg <- (extract.haps(vcf[hg_o], verbose = FALSE) !=
                     vcf_fix[hg_o, ]$AA)*1L
 haplotypes_hg_str <- apply(haplotypes_hg, 2, str_flatten)
 
-tab_hg <- tibble(hap = haplotypes_hg_str) |> count(pick(everything()))
+out_hg <- vcf_fix[hg_o, ] |> select(REF, ALT, AA, Cerana:Florea) |>
+  mutate(across(Cerana:Florea, \(x) case_when(
+    x == "." ~ "?",
+    x == AA ~ "0",
+    x == REF ~ "1",
+    x == ALT ~ "1",
+    TRUE ~ "9"
+  )))
+out_hg <- list(
+  cerana = str_flatten(out_hg$Cerana),
+  dorsata = str_flatten(out_hg$Dorsata),
+  laboriosa = str_flatten(out_hg$Laboriosa),
+  florea = str_flatten(out_hg$Florea)
+)
 
+# Count haplogroup sequences
+tab_hg <- tibble(hap = haplotypes_hg_str) |> count(pick(everything()))
 tab_hg |> slice_max(n, n = 5)
 ```
 
@@ -137,14 +152,36 @@ of both haplogroups
 
 ```{r}
 #| fig.height=5
-hg_v <- str_split(tab$hg, "")
+hg_v <- str_split(c(tab$hg,out_hg), "")
 hg_ref <- str_split_1(hg_ref, "")
 hg_str <- map(hg_v, \(x) case_when(
-    x == 0 ~ 0,
-    x == hg_ref ~ 1,
-    TRUE ~ 2
+    x == "0" ~ "0",
+    x == hg_ref ~ "1",
+    x == "1" ~ "2",
+    x == "?" ~ "?",
+    TRUE ~ "9"
     ))
-tab$hg_str <- hg_str |> map_chr(str_flatten)
+hg_str <- map_chr(hg_str, str_flatten)
+
+tab$hg_str <- hg_str[seq_len(nrow(tab))]
+
+# Looking at singltons identifed as tripple recombinatns, we probably
+# need to switch some ancestral alleles
+xx <- str_count(tab$hg_str, "0*(?:1[01]*2[01]|2[02]*1?[02]*)")
+yy <- str_count(old_hg_str, "0*(?:1[01]*|2[02]*)")
+str_view(tab$hg_str[xx == 3], "0*(?:1[01]*(?:2[01]+)?|2[02]*(?:1[02]+)?)")
+
+hg_str_v <- str_split(tab$hg_str, "")
+n_rec <- map_int(hg_str_v, function(x) {
+  # rle all sites that are not 0
+  r <- rle(x[x != "0"])
+  r$values[r$lengths == 1L] <- "0"
+  x <- inverse.rle(r)
+  r <- rle(x[x != "0"])
+  
+  length(r$lengths)
+})
+
 tab$is_recomb <- str_detect(tab$hg_str, "10*1") &
   str_detect(tab$hg_str, "20*2")
 
