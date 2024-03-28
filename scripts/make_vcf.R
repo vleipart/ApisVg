@@ -96,6 +96,8 @@ colnames(vmat) <- rownames(aln)
 variants <- split(vmat, seq.int(nrow(vmat)))
 
 pos <- cumsum(aln[1,] != "-")[start]
+part <- part[start]
+
 names(variants) <- as.character(pos)
 
 # identify variants at each site
@@ -140,9 +142,9 @@ info <- str_glue_data(info, str)
 ac <- if_else(tab$AC == "", "", str_c(";AC=", tab$AC))
 
 pos <- as.integer(names(sites))
-pos_part <- if_else(part[pos] %% 2 == 1,
-    paste0("Exon=", (part[pos]+1) %/% 2),
-    paste0("Intron=",(part[pos]+1) %/% 2) )
+pos_part <- if_else(part %% 2 == 1,
+    paste0("Exon=", (part+1) %/% 2),
+    paste0("Intron=",(part+1) %/% 2) )
 
 info <- str_glue("{pos_part};{info}{ac}")
 
@@ -185,7 +187,6 @@ header <- '##fileformat=VCFv4.2
 ##INFO=<ID=Florea,Number=1,Type=String,Description="Apis florea Allele">
 ##INFO=<ID=Exon,Number=1,Type=Integer,Description="Which exon the variant is in">
 ##INFO=<ID=Intron,Number=1,Type=Integer,Description="Which intron the variant is in">
-##INFO=<ID=AA,Number=1,Type=String,Description="Ancestral Allele">
 ##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
 ##INFO=<ID=AN,Number=1,Type=Integer,Description="Total number of alleles in called genotypes">
 ##INFO=<ID=AC,Number=A,Type=Integer,Description="Allele count in genotypes">
