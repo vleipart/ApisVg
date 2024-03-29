@@ -19,7 +19,7 @@ library(vcfR)
 library(here)
 ```
 
-## Vizualizing Haplotypes
+## Vizualizing Full Haplotypes
 
 We have created a VCF of the Vg region based on 543 diploid samples, and for
 this analysis we will investigate the biallelic sites with known ancestral
@@ -36,91 +36,103 @@ vcf <- raw_vcf[is.polymorphic(raw_vcf) &
 vcf_fix <- vcfR2tidy(vcf, info_only = TRUE)$fix
 ```
 
-Next we will extract phased haplotytpes and encode variants as 0 = ancestral
-and 1 = derived.
+Next we will extract phased haplotypes and encode variants as 0 = ancestral
+and 1 = derived. We will call these our full haplotypes.
 
 ```{r}
-haplotypes <- (extract.haps(vcf, verbose = FALSE) != vcf_fix$AA)*1L
-num_sites <- nrow(haplotypes)
-haplotypes_str <- apply(haplotypes, 2, str_flatten)
+full_haplotypes_mat <- (extract.haps(vcf, verbose = FALSE) != vcf_fix$AA)*1L
+colnames(full_haplotypes_mat) <- colnames(full_haplotypes_mat) |>
+  str_replace_all(c("_0$" = "_HP1", "_1$" = "_HP2"))
+full_haplotypes_str <- apply(full_haplotypes_mat, 2, str_flatten)
+full_reference <- str_flatten((vcf_fix$REF != vcf_fix$AA)*1L)
+full_ancestor <- str_dup("0", nrow(vcf_fix))
+
+full_cerana <- str_flatten(case_when(
+  vcf_fix$Cerana == vcf_fix$AA ~ "0",
+  vcf_fix$Cerana == vcf_fix$REF ~ "1",
+  vcf_fix$Cerana == vcf_fix$ALT ~ "1",
+  TRUE ~ "2"
+))
+
 ```
 
 Next we will count how abundant each haplotype is in our dataset and plot the
 haplotypes in two dimensions using principle-coordinate analysis (PCoA).
 
 ```{r}
-tab <- tibble(hap = haplotypes_str) |> count(hap)
+haplotypes_tab <- tibble(full = full_haplotypes_str) |> count(full)
+full_dist <- stringdistmatrix(c(full_reference, full_ancestor,
+                                full_cerana,
+                                haplotypes_tab$full),
+                                method = "hamming")
+v <- cmdscale(full_dist/nrow(haplotypes_tab), 2)
+haplotypes_tab$x <- v[-c(1:3),1]
+haplotypes_tab$y <- v[-c(1:3),2]
 
-hap_dist <- stringdistmatrix(tab$hap, method = "hamming")
-v <- cmdscale(hap_dist/nrow(haplotypes), 2)
+full_reference_xy <- list(x = v[1,1], y = v[1,2])
+full_ancestor_xy <- list(x = v[2,1], y = v[2,2])
+full_cerana_xy <- list(x = v[3,1], y = v[3,2])
 
-tab <- tab |> mutate(x = v[,1], y = v[,2])
-gg <- ggplot(tab, aes(x = x, y = y, size = n)) + geom_point(alpha = 0.5)
+gg <- ggplot(haplotypes_tab, aes(x = x, y = y, size = n)) + 
+  geom_point(alpha = 0.5)
+gg <- gg + annotate("point", color = "red",
+                    x = full_reference_xy$x,
+                    y = full_reference_xy$y)
+gg <- gg + annotate("point", color = "blue",
+                    x = full_ancestor_xy$x,
+                    y = full_ancestor_xy$y)
+gg <- gg + annotate("point", color = "green",
+                    x = full_cerana_xy$x,
+                    y = full_cerana_xy$y)
 gg <- gg + xlab("Axis 1") + ylab("Axis 2")
 gg <- gg + scale_size_continuous("Count")
 gg <- gg + coord_fixed()
 gg
 ```
+## Vizualizing Base Haplotypes
 
-The spread along Axis 1 reflects the presence of two haplogroups that are
-present in our dataset at high frequency. When we look at a historgram of
-MAF values, we see a many sites with a MAF \> 0.25.
+The spread along Axis 1 reflects the presence of two genetic backgrounds that
+are present in our dataset at high frequency. When we look at a histogram of
+MAF values, we see there are `r sum(vcf_fix$MAF > 0.25)` sites with
+MAF \> 0.25.
 
 ```{r}
 gg <- ggplot(vcf_fix, aes(x = MAF)) + geom_histogram(bins = 20)
 gg
 ```
 
-## Vizualizing Haplogroups
-
-To look at the haplogroups, we will focus only on sites with a MAF \> 0.25.
-Looking only at these sites, we determine that the two most common haplotypes,
-do not share any derived alleles. This suggests that each haplogroup evolved
-independent and in an isolated population. We will use these two haplotypes as
-reference haplotypes for each haplogroup.
+Looking only at sites with MAF \> 0.25, we convert our full haplotypes into
+base haplotypes. Importantly, the two most common patterns do not share any
+derived alleles. This suggests that each of these base haplotypes represents a
+haplogroup that evolved independent and in an isolated population. We will use
+these two haplotypes as reference haplotypes for each haplogroup.
 
 ```{r}
 # select sites with high MAF
-hg_o <- vcf_fix$MAF >= 0.25
-hg_pos <- which(hg_o)
+base_o <- vcf_fix$MAF > 0.25
 
-# Customize AA based on recombination data
-#vcf_fix$AA[hg_pos[47]] <- "C"
+# create base haplotypes
+base_haplotypes_mat <- (extract.haps(vcf[base_o], verbose = FALSE) !=
+                    vcf_fix[base_o, ]$AA)*1L
+colnames(base_haplotypes_mat) <- colnames(base_haplotypes_mat) |>
+  str_replace_all(c("_0$" = "_HP1", "_1$" = "_HP2"))
+base_haplotypes_str <- apply(base_haplotypes_mat, 2, str_flatten)
 
-# create haplogroup sequences
-haplotypes_hg <- (extract.haps(vcf[hg_o], verbose = FALSE) !=
-                    vcf_fix[hg_o, ]$AA)*1L
-haplotypes_hg_str <- apply(haplotypes_hg, 2, str_flatten)
-
-out_hg <- vcf_fix[hg_o, ] |> select(REF, ALT, AA, Cerana:Florea) |>
-  mutate(across(Cerana:Florea, \(x) case_when(
-    x == "." ~ "?",
-    x == AA ~ "0",
-    x == REF ~ "1",
-    x == ALT ~ "1",
-    TRUE ~ "9"
-  )))
-out_hg <- list(
-  cerana = str_flatten(out_hg$Cerana),
-  dorsata = str_flatten(out_hg$Dorsata),
-  laboriosa = str_flatten(out_hg$Laboriosa),
-  florea = str_flatten(out_hg$Florea)
-)
-
-# Count haplogroup sequences
-tab_hg <- tibble(hap = haplotypes_hg_str) |> count(pick(everything()))
-tab_hg |> slice_max(n, n = 5)
+# Count base sequences
+base_tab <- tibble(base = base_haplotypes_str) |> count(base)
+base_tab |> slice_max(n, n = 6) |> knitr::kable()
 ```
 
-If we plot the haplogroup-defining sites in two dimensions we see that the two
+If we plot the base haplotypes in two dimensions we see that the two
 references separate on different ends of Axis 1.
 
 ```{r}
-hap_dist_hg <- stringdistmatrix(tab_hg$hap, method = "hamming")
-v <- cmdscale(hap_dist_hg/nrow(haplotypes_hg), 2)
+base_dist <- stringdistmatrix(base_tab$base, method = "hamming")
+v <- cmdscale(base_dist/nrow(base_tab), 2)
+base_tab$x <- v[,1]
+base_tab$y <- v[,2]
 
-tab_hg <- tab_hg |> mutate(x = v[,1], y = v[,2])
-gg <- ggplot(tab_hg, aes(x = x, y = y, size = n)) + geom_point(alpha = 0.5)
+gg <- ggplot(base_tab, aes(x = x, y = y, size = n)) + geom_point(alpha = 0.5)
 gg <- gg + xlab("Axis 1") + ylab("Axis 2")
 gg <- gg + scale_size_continuous("Count")
 gg <- gg + coord_fixed()
@@ -130,13 +142,16 @@ gg
 Now we will redraw the original plot, but colored according to haplogroup.
 
 ```{r}
-hg_ref <- tab_hg |> slice_max(n, n = 1) |> pull(hap)
+base_ref <- base_tab |> slice_max(n, n = 1) |> pull(base)
 
-tab$hg <- tab$hap |> str_sub_all(which(hg_o), which(hg_o)) |>
-    map_chr(str_flatten)
-tab$hg_dist <- stringdistmatrix(tab$hg, hg_ref, "hamming")[,1]/sum(hg_o)
+haplotypes_tab$base <- haplotypes_tab$full |>
+  str_sub_all(which(base_o), which(base_o)) |>
+  map_chr(str_flatten)
 
-gg <- ggplot(tab, aes(x = x, y = y, size = n, color = hg_dist)) +
+haplotypes_tab$base_dist <- stringdistmatrix(
+  haplotypes_tab$base, base_ref, "hamming")[,1]/sum(base_o)
+
+gg <- ggplot(haplotypes_tab, aes(x = x, y = y, size = n, color = -1+2*(1-base_dist))) +
   geom_point()
 gg <- gg + xlab("Axis 1") + ylab("Axis 2")
 gg <- gg + scale_size_continuous("Count")
@@ -147,43 +162,84 @@ gg
 
 ## Recombinant Sequences
 
-We can identify recombinant sequences by looking at sequences that have parts
-of both haplogroups
+We can identify recombinant sequences by looking for base haplotypes that share
+fragments of the two base refrences. Because the base references contain a
+mixture of derived and ancestral alleles, we will use the $\Delta_{m,n,2}$
+statistic to detect recombinant base haplotypes.
 
 ```{r}
 #| fig.height=5
-hg_v <- str_split(c(tab$hg,out_hg), "")
-hg_ref <- str_split_1(hg_ref, "")
-hg_str <- map(hg_v, \(x) case_when(
-    x == "0" ~ "0",
-    x == hg_ref ~ "1",
-    x == "1" ~ "2",
-    x == "?" ~ "?",
-    TRUE ~ "9"
-    ))
-hg_str <- map_chr(hg_str, str_flatten)
+hg_ref <- tab_hg |> slice_max(n, n = 2)
+hg_ref_1 <- hg_ref$hap[1]
+hg_ref_2 <- hg_ref$hap[2]
 
-tab$hg_str <- hg_str[seq_len(nrow(tab))]
+hg_ref_1_v <- str_split_1(hg_ref_1, "")
+hg_ref_2_v <- str_split_1(hg_ref_2, "")
+hg_hap_v <- str_split(tab_hg$hap, "") |>
+  map(function(x) {
+    case_when(
+      x == "0" ~ "0",
+      x == hg_ref_1_v ~ "1",
+      x == hg_ref_2_v ~ "2"
+    )
+  })
 
-# Looking at singltons identifed as tripple recombinatns, we probably
-# need to switch some ancestral alleles
-xx <- str_count(tab$hg_str, "0*(?:1[01]*2[01]|2[02]*1?[02]*)")
-yy <- str_count(old_hg_str, "0*(?:1[01]*|2[02]*)")
-str_view(tab$hg_str[xx == 3], "0*(?:1[01]*(?:2[01]+)?|2[02]*(?:1[02]+)?)")
+tab_hg$hap2 <- map_chr(hg_hap_v, str_flatten)
 
-hg_str_v <- str_split(tab$hg_str, "")
-n_rec <- map_int(hg_str_v, function(x) {
-  # rle all sites that are not 0
-  r <- rle(x[x != "0"])
-  r$values[r$lengths == 1L] <- "0"
-  x <- inverse.rle(r)
-  r <- rle(x[x != "0"])
-  
-  length(r$lengths)
-})
+hg_hap_v <- str_split(tab_hg$hap, "") |>
+  map(function(x) {
+    case_when(
+      x == hg_ref_1_v ~ "1",
+      x == hg_ref_2_v ~ "2"
+    )
+  })
+tab_hg$hap3 <- map_chr(hg_hap_v, str_flatten)
 
-tab$is_recomb <- str_detect(tab$hg_str, "10*1") &
-  str_detect(tab$hg_str, "20*2")
+# Calculate a delta statistics
+# https://mol.ax/software/delta
+# https://www.ncbi.nlm.nih.gov/pmc/articles/PMC1894573/
+# https://www.ncbi.nlm.nih.gov/pmc/articles/PMC5850291/
+n <- str_length(hg_ref_1)
+ij <- expand_grid(i = 1:(n-1))
+r1 <- ij |> mutate(s = str_c(
+  str_sub(hg_ref_1, 1, i),
+  str_sub(hg_ref_2, i+1, n)
+))
+r2 <- ij |> mutate(s = str_c(
+  str_sub(hg_ref_2, 1, i),
+  str_sub(hg_ref_1, i+1, n)
+))
+
+ij <- expand_grid(i = 1:(n-1), j = 1:(n-1)) |> filter(i < j)
+
+r3 <- ij |> mutate(s = str_c(
+  str_sub(hg_ref_1, 1, i),
+  str_sub(hg_ref_2, i+1, j),
+  str_sub(hg_ref_1, j+1, n)
+  ))
+r4 <- ij |> mutate(s = str_c(
+  str_sub(hg_ref_2, 1, i),
+  str_sub(hg_ref_1, i+1, j),
+  str_sub(hg_ref_2, j+1, n)
+  ))
+
+rec_set <- c(hg_ref_1, hg_ref_2, r1$s, r2$s, r3$s, r4$s)
+
+d <- stringdistmatrix(tab_hg$hap, rec_set, method = "hamming")
+
+tab_hg$delta1 <- apply(d[,1:2], 1, min) - apply(d[,1:(2*n)], 1, min)
+tab_hg$delta2 <- apply(d[,1:2], 1, min) - apply(d, 1, min)
+
+gg <- ggplot(tab_hg, aes(x = x, y = y, size = n, color=(delta2 >= 4))) + geom_point(alpha = 0.5)
+gg <- gg + xlab("Axis 1") + ylab("Axis 2")
+gg <- gg + scale_size_continuous("Count")
+gg <- gg + coord_fixed()
+gg
+```
+
+```{r}
+tab <- tab |> left_join(select(tab_hg, hg_str = hap2, delta1, delta2))
+tab <- tab |> mutate(is_recomb = delta2 >= 4)
 
 gg <- ggplot(tab, aes(x = x, y = y, size = n, color = hg_dist,
                       shape = is_recomb)) + geom_point()
