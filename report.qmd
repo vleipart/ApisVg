@@ -169,68 +169,72 @@ statistic to detect recombinant base haplotypes.
 
 ```{r}
 #| fig.height=5
-hg_ref <- tab_hg |> slice_max(n, n = 2)
-hg_ref_1 <- hg_ref$hap[1]
-hg_ref_2 <- hg_ref$hap[2]
+base_ref <- base_tab |> slice_max(n, n = 2)
+base_ref_1 <- base_ref$base[1]
+base_ref_2 <- base_ref$base[2]
+base_anc <- str_dup("0", str_length(base_ref_1))
 
-hg_ref_1_v <- str_split_1(hg_ref_1, "")
-hg_ref_2_v <- str_split_1(hg_ref_2, "")
-hg_hap_v <- str_split(tab_hg$hap, "") |>
+base_ref_1_v <- str_split_1(base_ref_1, "")
+base_ref_2_v <- str_split_1(base_ref_2, "")
+
+base_v <- str_split(base_tab$base, "") |>
+  map(function(x) {
+    case_when(
+      x == base_ref_1_v ~ "1",
+      x == base_ref_2_v ~ "2"
+    )
+  })
+base_tab$base2 <- map_chr(base_v, str_flatten)
+
+base_v <- str_split(base_tab$base, "") |>
   map(function(x) {
     case_when(
       x == "0" ~ "0",
-      x == hg_ref_1_v ~ "1",
-      x == hg_ref_2_v ~ "2"
+      x == base_ref_1_v ~ "1",
+      x == base_ref_2_v ~ "2"
     )
   })
 
-tab_hg$hap2 <- map_chr(hg_hap_v, str_flatten)
-
-hg_hap_v <- str_split(tab_hg$hap, "") |>
-  map(function(x) {
-    case_when(
-      x == hg_ref_1_v ~ "1",
-      x == hg_ref_2_v ~ "2"
-    )
-  })
-tab_hg$hap3 <- map_chr(hg_hap_v, str_flatten)
+base_tab$base3 <- map_chr(base_v, str_flatten)
 
 # Calculate a delta statistics
 # https://mol.ax/software/delta
 # https://www.ncbi.nlm.nih.gov/pmc/articles/PMC1894573/
 # https://www.ncbi.nlm.nih.gov/pmc/articles/PMC5850291/
-n <- str_length(hg_ref_1)
-ij <- expand_grid(i = 1:(n-1))
-r1 <- ij |> mutate(s = str_c(
-  str_sub(hg_ref_1, 1, i),
-  str_sub(hg_ref_2, i+1, n)
+n <- str_length(base_ref_1)
+df <- expand_grid(i = 1:(n-1))
+r1 <- df |> mutate(s = str_c(
+  str_sub(base_ref_1, 1, i),
+  str_sub(base_ref_2, i+1, n)
 ))
-r2 <- ij |> mutate(s = str_c(
-  str_sub(hg_ref_2, 1, i),
-  str_sub(hg_ref_1, i+1, n)
+r2 <- df |> mutate(s = str_c(
+  str_sub(base_ref_2, 1, i),
+  str_sub(base_ref_1, i+1, n)
 ))
 
-ij <- expand_grid(i = 1:(n-1), j = 1:(n-1)) |> filter(i < j)
+df <- expand_grid(i = 1:(n-1), j = 1:(n-1)) |> filter(i < j)
 
-r3 <- ij |> mutate(s = str_c(
-  str_sub(hg_ref_1, 1, i),
-  str_sub(hg_ref_2, i+1, j),
-  str_sub(hg_ref_1, j+1, n)
+r3 <- df |> mutate(s = str_c(
+  str_sub(base_ref_1, 1, i),
+  str_sub(base_ref_2, i+1, j),
+  str_sub(base_ref_1, j+1, n)
   ))
-r4 <- ij |> mutate(s = str_c(
-  str_sub(hg_ref_2, 1, i),
-  str_sub(hg_ref_1, i+1, j),
-  str_sub(hg_ref_2, j+1, n)
+r4 <- df |> mutate(s = str_c(
+  str_sub(base_ref_2, 1, i),
+  str_sub(base_ref_1, i+1, j),
+  str_sub(base_ref_2, j+1, n)
   ))
 
-rec_set <- c(hg_ref_1, hg_ref_2, r1$s, r2$s, r3$s, r4$s)
+rec_set <- c(base_anc, base_ref_1, base_ref_2, r1$s, r2$s, r3$s, r4$s)
 
-d <- stringdistmatrix(tab_hg$hap, rec_set, method = "hamming")
+d <- stringdistmatrix(base_tab$base, rec_set, method = "hamming")
 
-tab_hg$delta1 <- apply(d[,1:2], 1, min) - apply(d[,1:(2*n)], 1, min)
-tab_hg$delta2 <- apply(d[,1:2], 1, min) - apply(d, 1, min)
+base_tab$delta0 <- d[,1] - apply(d[,1:3], 1, min)
+base_tab$delta1 <- apply(d[,1:3], 1, min) - apply(d[,1:(2*n+1)], 1, min)
+base_tab$delta2 <- apply(d[,1:3], 1, min) - apply(d, 1, min)
 
-gg <- ggplot(tab_hg, aes(x = x, y = y, size = n, color=(delta2 >= 4))) + geom_point(alpha = 0.5)
+gg <- ggplot(base_tab, aes(x = x, y = y, size = n, color=(delta2 >= 4))) +
+  geom_point(alpha = 0.5)
 gg <- gg + xlab("Axis 1") + ylab("Axis 2")
 gg <- gg + scale_size_continuous("Count")
 gg <- gg + coord_fixed()
@@ -238,11 +242,22 @@ gg
 ```
 
 ```{r}
-tab <- tab |> left_join(select(tab_hg, hg_str = hap2, delta1, delta2))
-tab <- tab |> mutate(is_recomb = delta2 >= 4)
+haplotypes_tab_orig <- haplotypes_tab 
+df <- base_tab |> select(base, base2, base3, delta0, delta1, delta2)
+haplotypes_tab <- left_join(haplotypes_tab_orig, df) |>
+  mutate(is_recomb = delta2 >= 4)
 
-gg <- ggplot(tab, aes(x = x, y = y, size = n, color = hg_dist,
+gg <- ggplot(haplotypes_tab, aes(x = x, y = y, size = n, color = base_dist,
                       shape = is_recomb)) + geom_point()
+gg <- gg + annotate("point", color = "red",
+                    x = full_reference_xy$x,
+                    y = full_reference_xy$y)
+gg <- gg + annotate("point", color = "blue",
+                    x = full_ancestor_xy$x,
+                    y = full_ancestor_xy$y)
+gg <- gg + annotate("point", color = "green",
+                    x = full_cerana_xy$x,
+                    y = full_cerana_xy$y)
 gg <- gg + xlab("Axis 1") + ylab("Axis 2")
 gg <- gg + scale_size_continuous("Count")
 gg <- gg + scale_shape_discrete("Recombinant")
@@ -255,24 +270,24 @@ Same analysis as before but now we will split it based on broad geographic regio
 
 ```{r}
 #| fig.height=8
-tab <- tibble(sample = colnames(haplotypes), hap = haplotypes_str)
+tab <- enframe(full_haplotypes_str, name = "id", value = "full")
 
-tab <- tab |> separate_wider_regex(sample, c("[^_]+_",
+tab <- tab |> separate_wider_regex(id, c("[^_]+_",
     "apiary" = "..", ".*"), cols_remove = FALSE) |>
-    separate_wider_delim(sample, "_", names = c("id", "id", NA), cols_remove = FALSE)
+    separate_wider_delim(id, "_", names = c("sample", "name", NA),
+                         cols_remove = FALSE)
 tab <- tab |> mutate(region = case_match(apiary,
     c("NC", "CA", "MD", "AZ", "MN", "IL") ~ "USA",
     c("FN", "SW", "RN", "CS", "DK", "IR", "PO", "TX", "FR") ~ "Brownbee",
     c("SL", "IT", "PL", "MK", "MT", "TR") ~ "South Europe"
     ))
-tab <- tab |> count(hap, region)
 
-hap_dist <- stringdistmatrix(tab$hap, method = "hamming")
-v <- cmdscale(hap_dist/num_sites, 2)
-tab <- tab |> mutate(x = v[,1], y = v[,2])
-tab <- tab |> arrange(desc(n))
+full_by_region <- tab |> count(full, region)
+full_by_region <- full_by_region |> left_join(select(haplotypes_tab, 
+                                                     full, x, y))
+full_by_region <- full_by_region |> arrange(desc(n))
 
-gg <- ggplot(tab, aes(x = x, y = y, size = n, color = region)) +
+gg <- ggplot(full_by_region, aes(x = x, y = y, size = n, color = region)) +
   geom_point(alpha = 0.5)
 gg <- gg + xlab("Axis 1") + ylab("Axis 2")
 gg <- gg + scale_size_continuous("Count")
