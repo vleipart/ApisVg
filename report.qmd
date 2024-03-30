@@ -17,6 +17,7 @@ library(stringdist)
 library(tidyverse)
 library(vcfR)
 library(here)
+library(ggrepel)
 ```
 
 ## Vizualizing Full Haplotypes
@@ -247,6 +248,21 @@ df <- base_tab |> select(base, base2, base3, delta0, delta1, delta2)
 haplotypes_tab <- left_join(haplotypes_tab_orig, df) |>
   mutate(is_recomb = delta2 >= 4)
 
+# Write recombination information to results
+full_tab <- enframe(full_haplotypes_str, name = "id", value = "full")
+full_tab <- full_tab |> separate_wider_regex(id, c("[^_]+_",
+    "apiary" = "..", ".*"), cols_remove = FALSE) |>
+    separate_wider_delim(id, "_", names = c("sample", "name", NA),
+                         cols_remove = FALSE)
+full_tab <- full_tab |> mutate(region = case_match(apiary,
+    c("NC", "CA", "MD", "AZ", "MN", "IL") ~ "USA",
+    c("FN", "SW", "RN", "CS", "DK", "IR", "PO", "TX", "FR") ~ "Brownbee",
+    c("SL", "IT", "PL", "MK", "MT", "TR") ~ "South Europe"
+    ))
+full_tab <- full_tab |> relocate(id, name, sample, apiary, region)
+full_tab <- full_tab |> left_join(haplotypes_tab)
+write_csv(full_tab, here("results", "full_haplotypes.csv.gz"))
+
 gg <- ggplot(haplotypes_tab, aes(x = x, y = y, size = n, color = base_dist,
                       shape = is_recomb)) + geom_point()
 gg <- gg + annotate("point", color = "red",
@@ -266,26 +282,13 @@ gg <- gg + coord_fixed()
 gg
 ```
 
+## Geographic Regions
+
 Same analysis as before but now we will split it based on broad geographic regions
 
 ```{r}
 #| fig.height=8
-tab <- enframe(full_haplotypes_str, name = "id", value = "full")
-
-tab <- tab |> separate_wider_regex(id, c("[^_]+_",
-    "apiary" = "..", ".*"), cols_remove = FALSE) |>
-    separate_wider_delim(id, "_", names = c("sample", "name", NA),
-                         cols_remove = FALSE)
-tab <- tab |> mutate(region = case_match(apiary,
-    c("NC", "CA", "MD", "AZ", "MN", "IL") ~ "USA",
-    c("FN", "SW", "RN", "CS", "DK", "IR", "PO", "TX", "FR") ~ "Brownbee",
-    c("SL", "IT", "PL", "MK", "MT", "TR") ~ "South Europe"
-    ))
-
-full_by_region <- tab |> count(full, region)
-full_by_region <- full_by_region |> left_join(select(haplotypes_tab, 
-                                                     full, x, y))
-full_by_region <- full_by_region |> arrange(desc(n))
+full_by_region <- full_tab |> count(full, region, x, y, sort = TRUE)
 
 gg <- ggplot(full_by_region, aes(x = x, y = y, size = n, color = region)) +
   geom_point(alpha = 0.5)
@@ -295,5 +298,65 @@ gg <- gg + scale_color_brewer("Region", palette = "Set1")
 gg <- gg + coord_fixed()
 gg <- gg + facet_wrap(vars(region), ncol = 1)
 gg
-
 ```
+
+## Apiary Analysis
+
+```{r}
+#| fig.height=8
+full_by_apiary <- full_tab |> count(full, apiary, region, x, y, sort = TRUE)
+
+# TODO: Sort apiaries by region
+gg <- ggplot(full_by_apiary, aes(x = x, y = y, size = n, color = region)) +
+  geom_point(alpha = 0.5)
+gg <- gg + xlab("Axis 1") + ylab("Axis 2")
+gg <- gg + scale_size_continuous("Count")
+gg <- gg + scale_color_brewer("Region", palette = "Set1")
+gg <- gg + coord_fixed()
+gg <- gg + facet_wrap(vars(apiary), ncol = 3)
+gg
+```
+```{r}
+tab <- full_tab |> arrange(apiary)
+full_dist <- stringdistmatrix(tab$full, method = "hamming") / 
+  nrow(haplotypes_tab)
+x <- combn(nrow(tab), 2)
+a <- x[1, ]
+b <- x[2, ]
+
+full_dist_tab <- tibble(
+  id_1 = tab$id[a],
+  id_2 = tab$id[b],
+  apiary_1 = tab$apiary[a],
+  apiary_2 = tab$apiary[b],
+  dist = full_dist )
+
+apiary_dist_tab <- summarize(full_dist_tab, d = mean(dist),
+                         .by = c(apiary_1, apiary_2))
+
+labs <- unique(tab$apiary)
+apiary_dist <- structure(filter(apiary_dist_tab, apiary_1 != apiary_2)$d,
+                         Size = length(labs),
+                         Labels = labs,
+                         Diag = TRUE,
+                         Upper = FALSE)
+
+plot(hclust(apiary_dist))
+
+v <- cmdscale(apiary_dist, 2)
+
+apiary_xy <- tibble(apiary = rownames(v), x = v[,1], y = v[,2])
+apiary_xy <- apiary_xy |> mutate(region = case_match(apiary,
+    c("NC", "CA", "MD", "AZ", "MN", "IL") ~ "USA",
+    c("FN", "SW", "RN", "CS", "DK", "IR", "PO", "TX", "FR") ~ "Brownbee",
+    c("SL", "IT", "PL", "MK", "MT", "TR") ~ "South Europe"
+    ))
+
+gg <- ggplot(apiary_xy, aes(x = x, y = y, label = apiary, color = region)) +
+  geom_point() + geom_text_repel()
+gg <- gg + coord_fixed()
+gg <- gg + xlab("Axis 1") + ylab("Axis 2")
+gg <- gg + scale_color_brewer("Region", palette = "Set1")
+gg
+```
+
