@@ -302,8 +302,11 @@ gg
 
 ## Apiary Analysis
 
+We will also separate haplotypes by apiary and visualize them as before.
+
 ```{r}
-#| fig.height=8
+#| fig.height=8,
+#| fig.width=8
 full_by_apiary <- full_tab |> count(full, apiary, region, x, y, sort = TRUE)
 
 # TODO: Sort apiaries by region
@@ -316,14 +319,20 @@ gg <- gg + coord_fixed()
 gg <- gg + facet_wrap(vars(apiary), ncol = 3)
 gg
 ```
+
+We also calculate the distances between pairs of apiaries as the
+average distance between haplotypes taken from different apiaries.
+
 ```{r}
+# calculate the distances between each sequence pair
 tab <- full_tab |> arrange(apiary)
 full_dist <- stringdistmatrix(tab$full, method = "hamming") / 
   nrow(haplotypes_tab)
+
+# construct a table to hold the pairwise distance data
 x <- combn(nrow(tab), 2)
 a <- x[1, ]
 b <- x[2, ]
-
 full_dist_tab <- tibble(
   id_1 = tab$id[a],
   id_2 = tab$id[b],
@@ -331,20 +340,24 @@ full_dist_tab <- tibble(
   apiary_2 = tab$apiary[b],
   dist = full_dist )
 
+# calculate the mean distance between pairs of apiaries
 apiary_dist_tab <- summarize(full_dist_tab, d = mean(dist),
                          .by = c(apiary_1, apiary_2))
 
+# convert results into a distance object
 labs <- unique(tab$apiary)
 apiary_dist <- structure(filter(apiary_dist_tab, apiary_1 != apiary_2)$d,
                          Size = length(labs),
                          Labels = labs,
-                         Diag = TRUE,
-                         Upper = FALSE)
+                         Diag = FALSE,
+                         Upper = FALSE,
+                         class = "dist")
 
+# plot a hierarchical clustering of the apiaries
 plot(hclust(apiary_dist))
 
+# plot a PCoA analysis of apiaries
 v <- cmdscale(apiary_dist, 2)
-
 apiary_xy <- tibble(apiary = rownames(v), x = v[,1], y = v[,2])
 apiary_xy <- apiary_xy |> mutate(region = case_match(apiary,
     c("NC", "CA", "MD", "AZ", "MN", "IL") ~ "USA",
@@ -353,7 +366,7 @@ apiary_xy <- apiary_xy |> mutate(region = case_match(apiary,
     ))
 
 gg <- ggplot(apiary_xy, aes(x = x, y = y, label = apiary, color = region)) +
-  geom_point() + geom_text_repel()
+  geom_point() + geom_text_repel(show.legend = FALSE)
 gg <- gg + coord_fixed()
 gg <- gg + xlab("Axis 1") + ylab("Axis 2")
 gg <- gg + scale_color_brewer("Region", palette = "Set1")
