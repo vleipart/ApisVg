@@ -1,6 +1,7 @@
 default: all
 
 all: results/apis_vg.dna.fasta results/apis_mellifera_vg.dna.vcf
+all: results/apis_vg.nonrec.fasta
 
 .PHONY: default all
 
@@ -22,3 +23,9 @@ results/apis_mellifera_vg.dna.vcf: results/apis_vg.dna.fasta results/apis_vg.dna
 
 report.pdf: report.qmd
 	bash scripts/run.bash quarto render $< --to pdf
+
+results/apis_vg.nonrec.fasta: results/apis_vg.dna.fasta results/full_haplotypes.csv.gz
+	bash scripts/run.bash Rscript scripts/make_nonrec_msa.R
+
+results/apis_vg.nonrec.fasta.raxml.bestTree: results/apis_vg.nonrec.fasta
+	bash scripts/run.bash raxml-ng --redo --msa $< --model HKY+G+I --seed 20240413 --tree pars{10},rand{10}

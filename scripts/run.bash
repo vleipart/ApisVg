@@ -20,6 +20,10 @@ do_quarto() {
     exec /usr/lib/rstudio/resources/app/bin/quarto/bin/quarto "$@"
 }
 
+do_raxml() {
+  exec raxml-ng "$@"
+}
+
 case $cmd in
   mafft)
     do_mafft "$@"
@@ -29,6 +33,9 @@ case $cmd in
     ;;
   quarto)
     do_quarto "$@"
+    ;;
+  raxml-ng)
+    do_raxml "$@"
     ;;
   *)
     echo This script does not know how to "$cmd".
