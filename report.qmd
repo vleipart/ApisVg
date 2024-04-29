@@ -256,8 +256,8 @@ full_tab <- full_tab |> separate_wider_regex(id, c("[^_]+_",
                          cols_remove = FALSE)
 full_tab <- full_tab |> mutate(region = case_match(apiary,
     c("NC", "CA", "MD", "AZ", "MN", "IL") ~ "USA",
-    c("FN", "SW", "RN", "CS", "DK", "IR", "PO", "TX", "FR") ~ "Brownbee",
-    c("SL", "IT", "PL", "MK", "MT", "TR") ~ "South Europe"
+    c("FN", "SW", "RN", "CS", "DK", "IR", "PL", "TX", "FR") ~ "Brownbee",
+    c("SL", "IT", "PO", "MK", "MT", "TR") ~ "South Europe"
     ))
 full_tab <- full_tab |> relocate(id, name, sample, apiary, region)
 full_tab <- full_tab |> left_join(haplotypes_tab)
@@ -361,8 +361,8 @@ v <- cmdscale(apiary_dist, 2)
 apiary_xy <- tibble(apiary = rownames(v), x = v[,1], y = v[,2])
 apiary_xy <- apiary_xy |> mutate(region = case_match(apiary,
     c("NC", "CA", "MD", "AZ", "MN", "IL") ~ "USA",
-    c("FN", "SW", "RN", "CS", "DK", "IR", "PO", "TX", "FR") ~ "Brownbee",
-    c("SL", "IT", "PL", "MK", "MT", "TR") ~ "South Europe"
+    c("FN", "SW", "RN", "CS", "DK", "IR", "PL", "TX", "FR") ~ "Brownbee",
+    c("SL", "IT", "PO", "MK", "MT", "TR") ~ "South Europe"
     ))
 
 gg <- ggplot(apiary_xy, aes(x = x, y = y, label = apiary, color = region)) +

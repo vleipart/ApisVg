@@ -21,8 +21,12 @@ results/apis_vg.dna.fasta results/apis_vg.dna.part.txt: data/apis_vg.msa.fasta d
 results/apis_mellifera_vg.dna.vcf: results/apis_vg.dna.fasta results/apis_vg.dna.part.txt
 	bash scripts/run.bash Rscript scripts/make_vcf.R
 
+# report.pdf: report.qmd
+# 	bash scripts/run.bash quarto render $< --to pdf
+
 report.pdf: report.qmd
-	bash scripts/run.bash quarto render $< --to pdf
+	QUARTO_PATH=/usr/lib/rstudio/resources/app/bin/quarto/bin/quarto \
+	bash scripts/run.bash Rscript -e 'quarto::quarto_render("report.qmd")'
 
 results/apis_vg.nonrec.fasta: results/apis_vg.dna.fasta results/full_haplotypes.csv.gz
 	bash scripts/run.bash Rscript scripts/make_nonrec_msa.R
