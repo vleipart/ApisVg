@@ -148,13 +148,14 @@ ggsave(filename = here("..", "figures", "FigureS1.png"), plot = FigureS1, width 
 #Plotting distribution of polymorphisms by MAF (Figure 1A)
 Fig1A <- ggplot(vcf_fix, aes(x = MAF)) + geom_histogram(bins = 20)
 Fig1A <- Fig1A + ggtitle("A) MAF distribution")
-Fig1A
 
 # Here we observe a break in the dataset on 0.25, using this as a thershold for "common"
 base_o <- vcf_fix$MAF > 0.25
 
 #Filtering out polymorphisms <0.25 (Figure 1B)
+nsSNPs <- c(3986, 4316, 4508, 4849, 5074, 5229, 5228)
 Fig1B <- ggplot(vg_positions_df %>% filter(MAF > 0.25), aes(x = POS, y = MAF, color = region)) + geom_point() +
+  geom_point(data = vg_positions_df %>% filter(MAF > 0.25, POS %in% nsSNPs), aes(x = POS, y = MAF), shape = 1, size = 3, color = "red",inherit.aes = FALSE) +
   annotate("rect", xmin = 0, xmax = 31, ymin = 0.25, ymax = 0.55, fill = "purple", alpha = 0.15) +
   annotate("rect", xmin = 369, xmax = 1087, ymin = 0.25, ymax = 0.55, fill = "purple", alpha = 0.15) +
   annotate("rect", xmin = 1236, xmax = 2135, ymin = 0.25, ymax = 0.55, fill = "purple", alpha = 0.15) +
@@ -171,7 +172,7 @@ Fig1B <- ggplot(vg_positions_df %>% filter(MAF > 0.25), aes(x = POS, y = MAF, co
 Fig1B <- Fig1B + scale_color_manual(values = c("Exon" = "purple", "Intron" = "orange"))
 Fig1B <- Fig1B + labs(title = "B) Polymorphisms with MAF > 0.25", x = "Vg Position", y = "MAF", color = "Region")
 Fig1B <- Fig1B + theme_minimal() + theme(legend.position = "top")
-
+Fig1B
 # create base haplotypes (haplotypes based on polymorphisms >0.25 MAF)
 base_haplotypes_mat <- (extract.haps(vcf[base_o], verbose = FALSE) !=
                           vcf_fix[base_o, ]$AA)*1L
@@ -259,6 +260,7 @@ CDDDD
 "
 Figure1 <- Fig1A + Fig1B + Fig1C + Fig1D + plot_layout(design = layout_2)
 ggsave(filename = here("..", "figures", "Figure1.png"), plot = Figure1, width = 9, height = 6, dpi = 300)
+ggsave(filename = here("..", "figures", "Figure1.pdf"), plot = Figure1, width = 9, height = 6, dpi = 300)
 
 #Plotting PCoA with >025 MAF haplotypes (Supplement Figure 2)
 S2 <- ggplot(base_tab, aes(x = x, y = y, size = haplotype_count)) + geom_point(alpha = 0.5)
@@ -379,7 +381,6 @@ S3 <- S3 + scale_color_gradient2(
 )
 
 ggsave(filename = here("..", "figures", "FigureS3.png"), plot = S3, width = 10, height = 5, dpi = 300)
-
 
 ## Sampling Category
 full_by_region <- full_tab |> count(full, region, x, y, sort = TRUE)
@@ -504,7 +505,7 @@ ACCC
 "
 Figure2 <- Fig2A + Fig2B + Fig2C + plot_layout(design = layout_3)
 ggsave(filename = here("..", "figures", "Figure2.png"), plot = Figure2, width = 10, height = 7, dpi = 300)
-
+ggsave(filename = here("..", "figures", "Figure2.pdf"), plot = Figure2, width = 10, height = 7, dpi = 300)
 
 ## Defining HG groups and fetching samples
 n95_df <- full_tab[full_tab$base_dist == 0,] #Haplotype n95
@@ -553,7 +554,6 @@ p4 <- make_pie_from_wide(hp_pie_df, "haplogroup 2",  "Haplogroup with n = 67")
 FigS5 <- (p1 | p2) / (p3 | p4) + plot_layout(guides = "collect") & theme(legend.position = "bottom") & guides(fill = guide_legend(ncol = 1))
 
 ggsave(filename = here("..", "figures", "FigureS5.png"), plot = FigS5, width = 10, height = 7, dpi = 300)
-
 
 #Plotting Supplement Figure 6, distribution of haplogroup per sampling category
 # haplogroup colors (n95 vs n67)
