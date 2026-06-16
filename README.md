@@ -15,7 +15,7 @@ rooting inferred the following tree.
 
 ## Population genetic study of vitellogenin 
 
-This repository contains the scripts used to generate the VCF file, perform the PCoA, MKT and FST analyses, and produce the figures for our population genetic study of honey bee vitellogenin, see (DOI). 
+This repository contains the scripts used to generate the VCF file, perform the PCoA, MKT and FST analyses, and produce the figures for our population genetic study of honey bee vitellogenin, see  https://doi.org/10.1002/ece3.73845. Our raw data is also aviliable on ENA (https://www.ebi.ac.uk/ena/browser/view/PRJEB113063) 
 
 The script  (`scripts/`) uses input files from (`results/`), which includes:
 
